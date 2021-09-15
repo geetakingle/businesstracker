@@ -1,5 +1,0 @@
-settlement-id	settlement-start-date	settlement-end-date	deposit-date	total-amount	currency	transaction-type	order-id	merchant-order-id	adjustment-id	shipment-id	marketplace-name	amount-type	amount-description	amount	fulfillment-id	posted-date	posted-date-time	order-item-code	merchant-order-item-id	merchant-adjustment-item-id	sku	quantity-purchased
-14310532311	2021-06-12 05:00:41 UTC	2021-07-10 05:00:41 UTC	2021-07-12 05:00:41 UTC	-41.99	USD																	
-14310532311						other-transaction						other-transaction	Payable to Amazon	-39.99		2021-06-12	2021-06-12 05:00:41 UTC					
-14310532311						other-transaction						other-transaction	Subscription Fee	-41.99		2021-07-06	2021-07-06 11:56:43 UTC					
-14310532311						other-transaction						other-transaction	Successful charge	39.99		2021-06-12	2021-06-12 08:32:25 UTC					
