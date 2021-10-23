@@ -5,28 +5,36 @@ import pandas as pd
 import configparser
 import os
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
 import numpy as np
 import socket
 
 
-def chart_cashflows(cfs):
-    plt.bar(cfs.keys(), cfs.values())
-    plt.show()
-
-
 class Cashflows:
-    def __init__(self):
-        self.accounts_cols = ['account_id', 'account_type', 'bank', 'status', 'joint']
-        self.transactions_cols = ['id', 'account_id', 'transaction_date', 'category', 'description', 'amount']
-        self.expense_types_cols = ['id', 'category', 'target']
-
+    def __init__(self, location=''):
+        self.capex_cols = ['id', 'date', 'amount', 'description', 'category']
+        self.opex_cols = ['id', 'date', 'amount', 'description', 'category']
+        self.amz_transactions_cols = ['id',
+                                      'settlement_id',
+                                      'transaction_type',
+                                      'sku',
+                                      'order_id',
+                                      'shipment_id',
+                                      'marketplace_name',
+                                      'amount_type',
+                                      'amount_description',
+                                      'amount',
+                                      'quantity_purchased',
+                                      'posted_date_time']
         psql_config = configparser.ConfigParser()
         psql_config.read("psql_config.ini")
-        self.conn = psql.connect(host=psql_config['postgresql']['host'],
-                                 database=psql_config['postgresql']['database'],
-                                 user=psql_config['postgresql']['user'],
-                                 password=psql_config['postgresql']['password'])
+        if '192.168.1.75' not in socket.gethostbyname(socket.gethostname()):
+            location = 'outside'
+        conn_location = ''.join(['postgresql', location])
+        self.conn = psql.connect(host=psql_config[conn_location]['host'],
+                                 port=psql_config[conn_location]['port'],
+                                 database=psql_config[conn_location]['database'],
+                                 user=psql_config[conn_location]['user'],
+                                 password=psql_config[conn_location]['password'])
 
     def execute_command(self, command):
         with self.conn:
@@ -34,20 +42,23 @@ class Cashflows:
                 curs.execute(command)
                 return curs.fetchall()
 
-    def get_table_range(self, table, date_cat, fro, to, order_by='transaction_date'):
+    def get_table_range(self, table, date_cat, fro, to):
         command = f"""SELECT * from {table} 
-                        WHERE {date_cat} > '{fro}'::date AND {date_cat} < '{to}'::date 
-                        ORDER BY {order_by} ASC"""
+                        WHERE {date_cat} BETWEEN '{fro}'::date AND '{to}'::date
+                        ORDER BY {date_cat}"""
         return self.execute_command(command)
 
     def get_cashflows(self, fro=None, to=None):
+        tz = 'America/Edmonton'
         # Convert fro and to to datetime
-        fro = datetime.strptime('2020-01-01', '%Y-%m-%d') if fro is None else datetime.strptime(fro, '%Y-%m-%d')
-        to = datetime.now().date() if to is None else datetime.strptime(to, '%Y-%m-%d')
+        fro = pd.Timestamp('2021-01-01', tz=tz) if fro is None else pd.Timestamp(fro, tz=tz)
+        to = pd.Timestamp(datetime.now().date(), tz=tz) if to is None else pd.Timestamp(to, tz=tz)
 
+        # GENERATE ONE MONTH TIMEFRAMES for hist bins
         # We need to put the start and end dates to first and last of each respective month,
         # not where indicated by fro and to. Manipulate the dates to get those dates
-        monthly = pd.date_range(start=fro, end=to, freq='M')
+        monthly = pd.date_range(start=fro, end=to, freq='M', tz=tz)
+        # These lists hold left and right edges of bins
         dates_start = []
         dates_end = []
         # Append the first day of the month of 'fro', in case 'fro' was entered in the middle
@@ -56,28 +67,52 @@ class Cashflows:
             dates_end.append(date)
             dates_start.append(date + timedelta(days=1))
         # Append the last day of the month of 'to',  not 'to' itself. This will prevent incomplete cashflow calculations
-        dates_end.append(pd.date_range(start=to, end=to + timedelta(days=(32 - to.day)), freq='M')[0])
+        dates_end.append(pd.date_range(start=to, end=to + timedelta(days=(32 - to.day)),
+                                       freq='M', tz=tz)[0])
 
-        # Retrieve transaction data based on calculated dates and input to DataFrame
-        df = pd.DataFrame(self.get_table_range('transactions', 'transaction_date', dates_start[0], dates_end[-1]),
-                          columns=self.transactions_cols)
-        df.drop('id', 1, inplace=True)  # Drop id, it's useless
-        df['transaction_date'] = pd.to_datetime(df['transaction_date'])  # Covert dates to datetime type
-        df.set_index('transaction_date')  # Set dates to index
+        # RETRIEVE CASHFLOWS
+        # Retrieve amz_transaction data based on calculated dates and input to DataFrame
+        df_capex = pd.DataFrame(
+            self.get_table_range('capex', 'date', dates_start[0], dates_end[-1]),
+            columns=self.capex_cols)
 
-        # Generate masks and get cashflows
-        cashflows = {}
-        for start, end in zip(dates_start, dates_end):
-            # We want to mask by dates, and filter out expense_types: credit_payments, admin, ignore
-            mask = (df['transaction_date'] >= start) & (df['transaction_date'] <= end) & \
-                   (df['category'] != 'admin') & \
-                   (df['category'] != 'credit_payments') & \
-                   (df['category'] != 'ignore')
+        # Retrieve amz_transaction data based on calculated dates and input to DataFrame
+        df_opex = pd.DataFrame(
+            self.get_table_range('opex', 'date', dates_start[0], dates_end[-1]),
+            columns=self.opex_cols)
 
-            # Create dict entry by Month Year and net cashflow
-            cashflows[start.strftime('%B %Y')] = df[mask]
+        # Retrieve amz_transaction data based on calculated dates and input to DataFrame
+        df_amz = pd.DataFrame(
+            self.get_table_range('amz_transactions', 'posted_date_time', dates_start[0], dates_end[-1]),
+            columns=self.amz_transactions_cols)
+        df_amz.drop(columns='id', inplace=True)  # Drop id, it's useless
 
-        return cashflows
+        # Covert dates to datetime type with local tz
+        df_capex['date'] = pd.to_datetime(df_capex['date']).dt.tz_localize(tz)
+        df_opex['date'] = pd.to_datetime(df_opex['date']).dt.tz_localize(tz)
+        df_amz['posted_date_time'] = pd.to_datetime(df_amz['posted_date_time']).dt.tz_localize(tz)
+
+        # Generate Histogram
+        hist_bin = dates_start + [dates_end[-1]]  # Generate bins for histogram
+
+        # Generate Masks and Filter Data
+        mask_amz = (df_amz['amount_description'] != 'Successful charge')
+        df_amz = df_amz[mask_amz]
+
+        # Combine dates,amounts of all DataFrames into one DF
+        raw_data = pd.DataFrame(columns=['date', 'amount', 'expenditure'])
+        # Add in CAPEX
+        df_capex['expenditure'] = 'capex'
+        raw_data = pd.concat([raw_data, df_capex[['date', 'amount', 'expenditure']]])
+        # Add in manual OPEX
+        df_opex['expenditure'] = 'opex'
+        raw_data = pd.concat([raw_data, df_opex[['date', 'amount', 'expenditure']]])
+        # Add in AMZ OPEX
+        df_amz.rename(columns={'posted_date_time': 'date'}, inplace=True)
+        df_amz['expenditure'] = 'opex'
+        raw_data = pd.concat([raw_data, df_amz[['date', 'amount', 'expenditure']]])
+
+        return raw_data, hist_bin
 
     def __enter__(self):
         return self
@@ -87,10 +122,10 @@ class Cashflows:
 
 
 class Transactions:
-    def __init__(self):
+    def __init__(self, location=''):
         psql_config = configparser.ConfigParser()
         psql_config.read("psql_config.ini")
-        if '192.168' not in socket.gethostbyname(socket.gethostname()):
+        if '192.168.1.75' not in socket.gethostbyname(socket.gethostname()):
             location = 'outside'
         conn_location = ''.join(['postgresql', location])
         self.conn = psql.connect(host=psql_config[conn_location]['host'],
@@ -120,12 +155,12 @@ class Transactions:
                 with open(file_path, 'r') as file:
                     df = pd.read_table(file)
                     df = df.set_axis([itm.replace('-', '_') for itm in list(df.keys())], axis=1)
-                    #df = df.fillna('')
+                    # df = df.fillna('')
 
                     # Check if transactions already added to db
                     if self.is_settlement_id_added(next(df.itertuples()).settlement_id):
                         # File already added, go to next file
-                        print(f'Duplicate record {each_file}')
+                        print(f'Duplicate Statement {each_file}')
                     else:
                         for line in df.itertuples():
                             if line.settlement_start_date is not np.nan:  # Record settlement id and dates
@@ -180,8 +215,6 @@ class Transactions:
 
 
 def main():
-    meow = Transactions()
-    meow.insert_transactions()
     pass
 
 
