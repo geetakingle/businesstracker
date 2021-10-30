@@ -98,7 +98,9 @@ class Cashflows:
         hist_bin = dates_start + [dates_end[-1]]  # Generate bins for histogram
 
         # Generate Masks and Filter Data
-        mask_amz = (df_amz['amount_description'] != 'Successful charge')
+        mask_amz = (df_amz['amount_description'] != 'Successful charge') & \
+                   (df_amz['amount_description'] != 'Previous Reserve Amount Balance') & \
+                   (df_amz['amount_description'] != 'Current Reserve Amount')
         df_amz = df_amz[mask_amz]
 
         # Combine dates,amounts of all DataFrames into one DF

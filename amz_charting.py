@@ -21,13 +21,14 @@ def style(p):
     p.yaxis.major_label_text_font_size = '8pt'
     return p
 
-# Type has to be 'capex' or 'opex'
+# Type has to be 'all','capex', or 'opex'
 def generate_cashflow_graph(type, fro=None, to=None):
     # Get DataFrame of data
     raw_data, hist_bin = Cashflows(configfile='psql_businessfinances.ini').get_cashflows(fro=fro, to=to)
 
-    # Use only type specified
-    raw_data = raw_data[raw_data['expenditure']==type]
+    # Filter raw_data if we want to split by expense types
+    if type != 'all':
+        raw_data = raw_data[raw_data['expenditure'] == type]
 
     # Generate histogram of cashflows
     date_epochs = raw_data['date'].values.astype(np.int64) // 10 ** 9
