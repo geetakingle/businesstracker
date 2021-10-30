@@ -6,11 +6,11 @@ import configparser
 import os
 from datetime import datetime, timedelta
 import numpy as np
-import socket
+import requests
 
 
 class Cashflows:
-    def __init__(self, location=''):
+    def __init__(self, configfile):
         self.capex_cols = ['id', 'date', 'amount', 'description', 'category']
         self.opex_cols = ['id', 'date', 'amount', 'description', 'category']
         self.amz_transactions_cols = ['id',
@@ -25,10 +25,12 @@ class Cashflows:
                                       'amount',
                                       'quantity_purchased',
                                       'posted_date_time']
+
         psql_config = configparser.ConfigParser()
-        psql_config.read("psql_config.ini")
-        if '192.168.1.75' not in socket.gethostbyname(socket.gethostname()):
-            location = 'outside'
+        psql_config.read(configfile)
+        local_ip = psql_config['myip']['localip']
+        current_ip = requests.get('https://api.ipify.org/').text
+        location = 'outside' if local_ip != current_ip else ''
         conn_location = ''.join(['postgresql', location])
         self.conn = psql.connect(host=psql_config[conn_location]['host'],
                                  port=psql_config[conn_location]['port'],
@@ -122,11 +124,12 @@ class Cashflows:
 
 
 class Transactions:
-    def __init__(self, location=''):
+    def __init__(self, configfile):
         psql_config = configparser.ConfigParser()
-        psql_config.read("psql_config.ini")
-        if '192.168.1.75' not in socket.gethostbyname(socket.gethostname()):
-            location = 'outside'
+        psql_config.read(configfile)
+        local_ip = psql_config['myip']['localip']
+        current_ip = requests.get('https://api.ipify.org/').text
+        location = 'outside' if local_ip != current_ip else ''
         conn_location = ''.join(['postgresql', location])
         self.conn = psql.connect(host=psql_config[conn_location]['host'],
                                  port=psql_config[conn_location]['port'],
