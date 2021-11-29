@@ -145,6 +145,17 @@ class Transactions:
                 curs.execute(command)
                 return curs.fetchall()
 
+    def check_missing_settlements(self):
+        command = f"SELECT * from amz_settlements order by start_date"
+        df = pd.DataFrame(self.execute_command(command), columns=['ID','Start','End'])
+
+        # Shift the End column down by one and fill in the NaN by the Start date
+        # Mask will track whether any dates are missing
+        # If any settlements are missing at position N, the End Date of N-1 != Start of N
+        # Mask will be True for any missing statements
+        mask = df['Start'] != df['End'].shift().fillna(df['Start'][0])
+        return df[mask]
+
     def is_settlement_id_added(self, settlement_id):
         command = f"SELECT id from amz_settlements"
         return settlement_id in self.execute_command(command)
