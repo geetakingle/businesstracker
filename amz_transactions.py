@@ -153,8 +153,17 @@ class Transactions:
         # Mask will track whether any dates are missing
         # If any settlements are missing at position N, the End Date of N-1 != Start of N
         # Mask will be True for any missing statements
+
         mask = df['Start'] != df['End'].shift().fillna(df['Start'][0])
-        return df[mask]
+
+        # Run through all missing entries and get Start and End missing dates
+        output = []
+        for i in range(len(df[mask])):
+            miss_start = df['End'].iloc[df[mask].index[i]-1]
+            miss_end = df['Start'].iloc[df[mask].index[i]]
+            output.append((miss_start, miss_end)) # Tuple of missing dates
+
+        return output
 
     def is_settlement_id_added(self, settlement_id):
         command = f"SELECT id from amz_settlements"
